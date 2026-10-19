@@ -1,3 +1,18 @@
+-- Внутренние флаги и состояния:
+signal is_first_start : std_logic := '1'; -- Флаг первого запуска после сброса
+signal dev_prev       : integer range 0 to 1 := 0;
+
+-- Состояния автомата:
+type t_state is (
+    ST_IDLE,
+    ST_WAKEUP,          -- Отправка 0x010300
+    ST_CHECK_ID,        -- Отправка 0x0F0000
+    ST_SET_CHANNEL,     -- Отправка команды смены канала
+    ST_WAIT_SETTLE,     -- Пауза 102 мс
+    ST_READ_DATA,       -- Отправка 0x440000
+    ST_WAIT_SAMPLE      -- Пауза 51 мс
+);
+signal state : t_state := ST_IDLE;
 process(CLK)
 begin
     if rising_edge(CLK) then
