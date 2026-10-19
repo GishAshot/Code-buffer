@@ -1,56 +1,79 @@
--- =========================================================================
-    -- АВТОНОМНЫЙ ИМИТАТОР ДРАЙВЕРА АЦП (С меняющимися числами от круга к кругу)
-    -- =========================================================================
-    MOCK_ADC_DRIVER : process
-        -- Счетчик кругов (кадров):
-        variable round_cnt : integer := 1;
-        variable base_val  : integer := 0;
-    begin
-        -- Сигналы в покое:
-        adc_busy <= '0';
-        data_rdy <= '0';
-        adc_dat  <= (others => '0');
+-- Внутренние флаги и состояния:
+signal is_first_start : std_logic := '1'; -- Флаг первого запуска после сброса
+signal dev_prev       : integer range 0 to 1 := 0;
 
-        -- 1. ЖДЕМ команды запуска от вашего блока (или сигнала сброса):
-        wait until rising_edge(clk) and start_adc = '1';
+-- Состояния автомата:
+type t_state is (
+    ST_IDLE,
+    ST_WAKEUP,          -- Отправка 0x010300
+    ST_CHECK_ID,        -- Отправка 0x0F0000
+    ST_SET_CHANNEL,     -- Отправка команды смены канала
+    ST_WAIT_SETTLE,     -- Пауза 102 мс
+    ST_READ_DATA,       -- Отправка 0x440000
+    ST_WAIT_SAMPLE      -- Пауза 51 мс
+);
+signal state : t_state := ST_IDLE;
+process(CLK)
+begin
+    if rising_edge(CLK) then
+        if RST = '1' then
+            state          <= ST_IDLE;
+            is_first_start <= '1';
+            dev_prev       <= 0;
+            spi_start      <= '0';
+            adc_mosi       <= (others => '0');
+        else
+            case state is
 
-        -- 2. АЦП просыпается, поднимаем BUSY:
-        adc_busy <= '1';
-        wait for 40 ns;
+                when ST_IDLE =>
+                    -- Проверяем: первый ли это старт?
+                    if is_first_start = '1' then
+                        adc_mosi       <= X"010300"; -- Сначала будим АЦП
+                        spi_start      <= '1';
+                        state          <= ST_WAKEUP;
+                        is_first_start <= '0';
 
-        -- 3. Вычисляем базу для текущего круга (чтобы числа чередовались!):
-        -- Круг 1: база 0x1000
-        -- Круг 2: база 0x5000
-        -- Круг 3: база 0x9000 ... числа всегда разные!
-        base_val := round_cnt * 16#2000#;
+                    -- Или устройство изменилось?
+                    elsif current_device /= dev_prev then
+                        adc_mosi       <= X"0F0000"; -- Читаем ID нового чипа
+                        spi_start      <= '1';
+                        state          <= ST_CHECK_ID;
+                        dev_prev       <= current_device; -- Запоминаем
 
-        -- 4. Выдаем пачку из 13 каналов:
-        for i in 0 to 12 loop
+                    -- Обычный рабочий режим: пора переключать канал
+                    elsif need_change_channel = '1' then
+                        adc_mosi       <= w_channel_lut_data; -- Из таблицы ROM
+                        spi_start      <= '1';
+                        state          <= ST_SET_CHANNEL;
 
-            -- Замер: База круга + смещение датчика (наглядно видно и чип, и круг!):
-            adc_dat <= std_logic_vector(to_unsigned(base_val + (i * 16#0100#), 16));
+                    -- Пора читать очередную точку (одну из 16)
+                    elsif need_read_sample = '1' then
+                        adc_mosi       <= X"440000"; -- Читаем замер
+                        spi_start      <= '1';
+                        state          <= ST_READ_DATA;
+                    end if;
 
-            -- Раскладка по чипам и ножкам:
-            if i <= 6 then
-                dev  <= "00"; -- АЦП 1
-                chan <= std_logic_vector(to_unsigned(i, 4));
-            else
-                dev  <= "01"; -- АЦП 2
-                chan <= std_logic_vector(to_unsigned(i - 7, 4));
-            end if;
+                when ST_WAKEUP =>
+                    spi_start <= '0';
+                    if spi_rdy = '1' then
+                        state <= ST_IDLE; -- Разбудили, возвращаемся в выбор действий
+                    end if;
 
-            -- Строб готовности на 1 такт (10 нс):
-            data_rdy <= '1';
-            wait for 10 ns;
-            data_rdy <= '0';
+                when ST_CHECK_ID =>
+                    spi_start <= '0';
+                    if spi_rdy = '1' then
+                        -- Здесь проверяем ответ ID (байты ответа с MISO)
+                        if spi_rx_data(15 downto 12) = X"5" then
+                            state <= ST_IDLE; -- ID сошелся, продолжаем
+                        else
+                            state <= ST_IDLE; -- Авария (или ветка ошибки)
+                        end if;
+                    end if;
 
-            -- Пауза между замерами:
-            wait for 30 ns;
-        end loop;
-
-        -- 5. Все 13 каналов выданы — опускаем BUSY:
-        adc_busy  <= '0';
-        round_cnt := round_cnt + 1; -- на следующем круге числа будут ДРУГИМИ!
-
-        wait for 50 ns;
-    end process;
+                -- Остальные состояния (SET_CHANNEL, WAIT_SETTLE, READ_DATA)...
+                when others =>
+                    state <= ST_IDLE;
+            end case;
+        end if;
+    end if;
+end process;
