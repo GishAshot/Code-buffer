@@ -1,8 +1,48 @@
-ADC_MOSI <= X"010300"               when FIRST_START = '1'      -- 1. Пробудить АЦП
-       else X"0F0000"               when DEV_CHANGED = '1'      -- 2. Сменился чип -> опрос ID
-       else X"440000"               when FIRST_DATA = '0'       -- 3. Обычный замер (чтение)
-       else X"02" & CHAN_SIG & X"700";                          -- 4. Смена канала из LUT
+-- Умный имитатор SPI и ответов AD7708
+    SPI_IM : process
+        variable v_sample_cnt : integer := 0;
+    begin
+        SPI_RDY <= '0';
+        SPI_DAT <= (others => '0');
 
-CNT_DELAY_COMPARE <= 20                 when FIRST_START = '1' or DEV_CHANGED = '1'
-                else DELAY_50MS_CYCLES  when FIRST_DATA = '0'
-                else DELAY_100MS_CYCLES;
+        -- 1. Ждем строб запуска от драйвера
+        wait until rising_edge(CLK) and SPI_START = '1';
+
+        -- 2. Имитируем время передачи SPI (например, 50-100 нс)
+        wait for 50 ns;
+
+        -- 3. Анализируем, какую команду прислал драйвер по ADC_MOSI:
+
+        -- СЛУЧАЙ А: Запрос ID регистра (0x0F....)
+        if ADC_MOSI(23 downto 16) = X"0F" then
+            -- ШТАТНЫЙ РЕЖИМ: возвращаем ID с пятеркой (например 0x50 в байте данных)
+            SPI_DAT <= X"005000"; 
+            
+            -- ДЛЯ ТЕСТА АВАРИИ (если захотите проверить ошибку АЦП):
+            -- просто закомментируйте строку выше и раскомментируйте эту:
+            -- SPI_DAT <= X"000000"; -- Авария: чип молчит
+
+        -- СЛУЧАЙ Б: Запрос чтения данных замера (0x44....)
+        elsif ADC_MOSI(23 downto 16) = X"44" then
+            -- ШТАТНЫЙ РЕЖИМ: отдаем 16-битный результат замера
+            -- Можно отдавать разное значение в зависимости от канала или счетчика:
+            SPI_DAT <= X"00" & X"12" & std_logic_vector(to_unsigned(v_sample_cnt, 8));
+            v_sample_cnt := v_sample_cnt + 1;
+
+            -- ДЛЯ ТЕСТА АВАРИИ ДАННЫХ (зашкал/обрыв):
+            -- SPI_DAT <= X"00FFFF"; -- Перегрузка / зашкал
+            -- SPI_DAT <= X"000000"; -- Обрыв / КЗ на землю
+
+        -- СЛУЧАЙ В: Команда записи (0x01.... пробуждение или 0x02.... смена канала)
+        else
+            -- При записи АЦП ничего полезного не отдает
+            SPI_DAT <= (others => '0');
+        end if;
+
+        -- 4. Формируем строб готовности SPI_RDY на 1 такт
+        wait until rising_edge(CLK);
+        SPI_RDY <= '1';
+        wait until rising_edge(CLK);
+        SPI_RDY <= '0';
+
+    end process SPI_IM;
