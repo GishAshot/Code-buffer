@@ -1,48 +1,23 @@
--- Умный имитатор SPI и ответов AD7708
-    SPI_IM : process
-        variable v_sample_cnt : integer := 0;
-    begin
-        SPI_RDY <= '0';
-        SPI_DAT <= (others => '0');
-
-        -- 1. Ждем строб запуска от драйвера
-        wait until rising_edge(CLK) and SPI_START = '1';
-
-        -- 2. Имитируем время передачи SPI (например, 50-100 нс)
-        wait for 50 ns;
-
-        -- 3. Анализируем, какую команду прислал драйвер по ADC_MOSI:
-
-        -- СЛУЧАЙ А: Запрос ID регистра (0x0F....)
-        if ADC_MOSI(23 downto 16) = X"0F" then
-            -- ШТАТНЫЙ РЕЖИМ: возвращаем ID с пятеркой (например 0x50 в байте данных)
-            SPI_DAT <= X"005000"; 
-            
-            -- ДЛЯ ТЕСТА АВАРИИ (если захотите проверить ошибку АЦП):
-            -- просто закомментируйте строку выше и раскомментируйте эту:
-            -- SPI_DAT <= X"000000"; -- Авария: чип молчит
-
-        -- СЛУЧАЙ Б: Запрос чтения данных замера (0x44....)
-        elsif ADC_MOSI(23 downto 16) = X"44" then
-            -- ШТАТНЫЙ РЕЖИМ: отдаем 16-битный результат замера
-            -- Можно отдавать разное значение в зависимости от канала или счетчика:
-            SPI_DAT <= X"00" & X"12" & std_logic_vector(to_unsigned(v_sample_cnt, 8));
-            v_sample_cnt := v_sample_cnt + 1;
-
-            -- ДЛЯ ТЕСТА АВАРИИ ДАННЫХ (зашкал/обрыв):
-            -- SPI_DAT <= X"00FFFF"; -- Перегрузка / зашкал
-            -- SPI_DAT <= X"000000"; -- Обрыв / КЗ на землю
-
-        -- СЛУЧАЙ В: Команда записи (0x01.... пробуждение или 0x02.... смена канала)
+VIRTUAL_ADC_1 : process(SCLK, CS(0))
+    variable SAMPLE_CNT : INTEGER := 0;
+    variable TEST_DATA  : STD_LOGIC_VECTOR(DATA_WIDTH-1 DOWNTO 0) := (others => '0');
+begin
+    if CS(0) = '1' then
+        -- Когда CS поднят, подготавливаем данные на следующий замер:
+        SAMPLE_CNT := SAMPLE_CNT + 1;
+        
+        -- САМАЯ ВАЖНАЯ ПРАВКА:
+        if SAMPLE_CNT = 1 then
+            -- Первый ответ обязан быть паспортом чипа (ID):
+            TEST_DATA := X"005000"; 
+        elsif (SAMPLE_CNT MOD 2 = 0) then
+            TEST_DATA := X"000300";
         else
-            -- При записи АЦП ничего полезного не отдает
-            SPI_DAT <= (others => '0');
+            TEST_DATA := X"000100";
         end if;
 
-        -- 4. Формируем строб готовности SPI_RDY на 1 такт
-        wait until rising_edge(CLK);
-        SPI_RDY <= '1';
-        wait until rising_edge(CLK);
-        SPI_RDY <= '0';
-
-    end process SPI_IM;
+    elsif falling_edge(SCLK) then
+        MISO(0)   <= TEST_DATA(DATA_WIDTH-1);
+        TEST_DATA := TEST_DATA(DATA_WIDTH-2 DOWNTO 0) & '0';
+    end if;
+end process VIRTUAL_ADC_1;
