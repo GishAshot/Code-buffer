@@ -20,4 +20,3 @@ set_property IOSTANDARD LVCMOS33 [get_ports {SPI_CS_N[0]}]
 set_property PACKAGE_PIN <НОМЕР_НОЖКИ> [get_ports {SPI_CS_N[1]}]
 set_property IOSTANDARD LVCMOS33 [get_ports {SPI_CS_N[1]}]
 
-https://disk.yandex.ru/d/dSdCwhddODW31Q/3%20этап
