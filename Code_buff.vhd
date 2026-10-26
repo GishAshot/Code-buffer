@@ -4,7 +4,7 @@ set_property IOSTANDARD LVCMOS33 [get_ports SPI_SCLK]
 
 # Выход данных от ПЛИС в АЦП (идет на ножки 24 DIN обеих AD7708)
 set_property PACKAGE_PIN <НОМЕР_НОЖКИ> [get_ports SPI_MOSI]
-set_property IOSTANDARD LVCMOS33 [get_ports SPI_MOSI]https://disk.yandex.ru/client/disk/Резюме
+set_property IOSTANDARD LVCMOS33 [get_ports https://disk.yandex.ru/d/30w6gBf_kJNw1w
 
 # Вход данных от АЦП в ПЛИС (идет от ножек 23 DOUT микросхем)
 set_property PACKAGE_PIN <НОМЕР_НОЖКИ> [get_ports SPI_MISO]
