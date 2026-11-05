@@ -16,3 +16,9 @@ begin
         end if;
     end if;
 end process;
+
+
+
+-- В Channel_info_send.vhd после слова BEGIN:
+CHAN_CHECK <= (others => '1') when ADC_DAT_ERR = '1'
+         else (others => '0');
