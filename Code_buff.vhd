@@ -1,24 +1,21 @@
--- В AD7708_DRIVER.vhd:
-imp_DATA_ERR : process (CLK) is
+elsif (STEPS_CNT = STEPS_NUMBER - 1) and (DATA_RDY_SIG = '1') then
+    FIRST_START_EN <= '0';
+
+
+
+
+imp_FIRST_START : process (CLK) is
 begin
     if rising_edge(CLK) then
         if (RST = '0') then
-            DATA_ERR_SIG <= '0';
-        elsif (DATA_RDY_SIG = '1') then  -- Было DATA_RDY_SIG_Z!
-            if (ADC_DAT_ACCUM(19 downto 4) = X"0000") or 
-               (ADC_DAT_ACCUM(19 downto 4) = X"FFFF") then
-                DATA_ERR_SIG <= '1';
-            else
-                DATA_ERR_SIG <= '0';
-            end if;
-        else
-            DATA_ERR_SIG <= '0';
+            FIRST_START <= '0';
+        -- 1. Взводим флаг пробуждения СРАЗУ ПОСЛЕ того, как проверили ID:
+        elsif (FIRST_START_EN = '1') and (DEV_CHANGED = '1') and (SPI_RDY = '1') then
+            FIRST_START <= '1';
+            
+        -- 2. Сбрасываем флаг пробуждения, как только команда 0x010300 ушла в SPI:
+        elsif (FIRST_START = '1') and (SPI_RDY = '1') then
+            FIRST_START <= '0';
         end if;
     end if;
 end process;
-
-
-
--- В Channel_info_send.vhd после слова BEGIN:
-CHAN_CHECK <= (others => '1') when ADC_DAT_ERR = '1'
-         else (others => '0');
