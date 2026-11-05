@@ -1,17 +1,14 @@
-imp_FIRST_START : process (CLK) is
+imp_WAKEUP_CTRL : process (CLK) is
 begin
     if rising_edge(CLK) then
+        -- 1. При сбросе ОБА чипа помечены как спящие ("11"):
         if (RST = '0') then
-            FIRST_START <= '0';
+            WAKEUP_NEEDED <= (others => '1');
             
-        -- ВЗВОДИМ FIRST_START ТОЛЬКО ТОГДА, КОГДА ПРОВЕРКА ID УЖЕ ЗАКОНЧИЛАСЬ:
-        -- (DEV_CHANGED был в 1, и пришел SPI_RDY)
-        elsif (FIRST_START_EN = '1') and (DEV_CHANGED = '1') and (SPI_RDY = '1') then
-            FIRST_START <= '1';
-            
-        -- СБРАСЫВАЕМ FIRST_START ТОЛЬКО ПОСЛЕ ТОГО, КАК УЛЕТЕЛА КОМАНДА 0x010300:
-        elsif (FIRST_START = '1') and (SPI_RDY = '1') then
-            FIRST_START <= '0';
+        -- 2. Сбрасываем флаг сна ТОЛЬКО ДЛЯ ТЕКУЩЕГО ЧИПА,
+        --    когда команда 0x010300 реально улетела по SPI (пришел SPI_RDY):
+        elsif (DEV_CHANGED = '0') and (CURRENT_WAKEUP = '1') and (SPI_RDY = '1') then
+            WAKEUP_NEEDED(conv_integer(DEV_SIG)) <= '0';
         end if;
     end if;
 end process;
