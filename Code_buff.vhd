@@ -1,14 +1,17 @@
-imp_WAKEUP_CTRL : process (CLK) is
+imp_DEVICES_WOKEN : process (CLK) is
+    variable dev_idx : integer range 0 to SLAVE_NUMBER-1;
 begin
     if rising_edge(CLK) then
-        -- 1. При сбросе ОБА чипа помечены как спящие ("11"):
-        if (RST = '0') then
-            WAKEUP_NEEDED <= (others => '1');
+        -- 1. При сбросе (RST='0') или если сработал детектор аварии (ADC_ERR_SIG='1'):
+        -- Сбрасываем чек-лист в "00" (все чипы снова требуют пробуждения!):
+        if (RST = '0') or (ADC_ERR_SIG = '1') then
+            DEVICES_WOKEN <= (others => '0');
             
-        -- 2. Сбрасываем флаг сна ТОЛЬКО ДЛЯ ТЕКУЩЕГО ЧИПА,
-        --    когда команда 0x010300 реально улетела по SPI (пришел SPI_RDY):
-        elsif (DEV_CHANGED = '0') and (CURRENT_WAKEUP = '1') and (SPI_RDY = '1') then
-            WAKEUP_NEEDED(conv_integer(DEV_SIG)) <= '0';
+        -- 2. Фиксируем успешную отправку команды пробуждения:
+        -- (SPI закончил передачу, и на шине MOSI была именно команда 0x010300)
+        elsif (SPI_RDY = '1') and (ADC_MOSI = X"010300") then
+            dev_idx := conv_integer(DEV_SIG);
+            DEVICES_WOKEN(dev_idx) <= '1'; -- Чип dev_idx официально проснулся!
         end if;
     end if;
 end process;
